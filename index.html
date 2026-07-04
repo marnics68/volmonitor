@@ -133,6 +133,15 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
 </div>
 
 <div class="panel">
+  <div class="panel-title">Agent sync</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <button class="btn" id="syncNow">Sync from agent</button>
+    <button class="btn secondary" id="autoSyncBtn">Auto-sync: off</button>
+  </div>
+  <div id="syncInfo" class="feed-empty" style="padding:4px 0;">Uses the same ntfy topic above (reads &lt;topic&gt;-state). Sync pulls the agent's latest live readings into the fields below.</div>
+</div>
+
+<div class="panel">
   <div class="panel-title">Top contributors, ranked</div>
   <div id="factors"></div>
 </div>
@@ -333,6 +342,41 @@ document.getElementById("ntfyConnect").addEventListener("click",()=>{
   saveState();pollNtfy();
   if(feedTimer)clearInterval(feedTimer);
   feedTimer=setInterval(pollNtfy,60000);
+});
+
+// ---------- agent state sync ----------
+let autoSync=false, autoSyncTimer=null;
+async function syncFromAgent(){
+  const topic=document.getElementById("ntfyTopic").value.trim();
+  const info=document.getElementById("syncInfo");
+  if(!topic){info.textContent="Enter your ntfy topic above first.";return;}
+  try{
+    const r=await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}-state/json?poll=1&since=24h`);
+    const lines=(await r.text()).trim().split("\n").filter(Boolean);
+    const msgs=lines.map(l=>{try{return JSON.parse(l);}catch(e){return null;}})
+      .filter(m=>m&&m.event==="message").sort((a,b)=>b.time-a.time);
+    if(!msgs.length){info.textContent="No agent state found in the last 24h — is the agent running with the updated script?";return;}
+    let st;try{st=JSON.parse(msgs[0].message);}catch(e){info.textContent="Latest state message wasn't valid JSON.";return;}
+    const inp=st.inputs||{};
+    const setIf=(id,v)=>{if(v!==null&&v!==undefined)document.getElementById(id).value=v;};
+    setIf("vixLevel",inp.vixLevel);setIf("vixChangePct",inp.vixChangePct);
+    setIf("skewLevel",inp.skewLevel);setIf("yield10bp",inp.yield10bp);setIf("yield2bp",inp.yield2bp);
+    setIf("nfpActual",inp.nfpActual);setIf("nfpConsensus",inp.nfpConsensus);
+    setIf("inflSurprise",inp.inflSurprise);setIf("ismActual",inp.ismActual);setIf("ismPrior",inp.ismPrior);
+    if(inp.fedTone&&FED[inp.fedTone]!==undefined){fedTone=inp.fedTone;syncFedButtons();}
+    if(typeof inp.crowded==="boolean"){crowded=inp.crowded;syncCrowdedBtn();}
+    render();
+    const age=Math.round((Date.now()/1000-st.ts)/60);
+    info.textContent=`Synced — agent read ${age} min ago. Agent composite: ${st.composite} (${st.status}).`
+      +(st.narrative?` ${st.narrative}`:"");
+  }catch(e){info.textContent="Couldn't reach ntfy.sh — check connection/topic.";}
+}
+document.getElementById("syncNow").addEventListener("click",syncFromAgent);
+document.getElementById("autoSyncBtn").addEventListener("click",()=>{
+  autoSync=!autoSync;
+  document.getElementById("autoSyncBtn").textContent=`Auto-sync: ${autoSync?"on":"off"}`;
+  if(autoSyncTimer){clearInterval(autoSyncTimer);autoSyncTimer=null;}
+  if(autoSync){syncFromAgent();autoSyncTimer=setInterval(syncFromAgent,60000);}
 });
 
 // ---------- PWA install ----------
