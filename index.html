@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0B0D">
+<title>Volatility Pressure Monitor</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0A0B0D; --panel: #101214; --panel-border: #23262B; --field: #14171A;
+  --field-border: #2A2E33; --ink: #E8E3D8; --ink-bright: #F3EFE6; --ink-dim: #8A8478;
+  --ink-faint: #5C574C; --amber: #D9A441; --green: #5C9A69; --orange: #D9714B; --red: #C0392B;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+.mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+body { background: var(--bg); color: var(--ink); min-height: 100vh; padding-bottom: 48px; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px; }
+
+/* Alert banner */
+#alertBanner { display: none; position: sticky; top: 0; z-index: 20; background: var(--red);
+  color: #FFF3EF; padding: 10px 16px; text-align: center; font-weight: 600; font-size: 13.5px;
+  letter-spacing: 0.02em; animation: pulseB 1.8s ease-in-out infinite; }
+@keyframes pulseB { 0%,100% { box-shadow: 0 0 0 0 rgba(192,57,43,.45); } 50% { box-shadow: 0 0 0 8px rgba(192,57,43,0); } }
+@media (prefers-reduced-motion: reduce) { #alertBanner { animation: none; } }
+
+header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 12px; }
+.eyebrow { color: var(--amber); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
+h1 { color: var(--ink-bright); font-size: 22px; letter-spacing: -0.01em; line-height: 1.1; }
+#clock { text-align: right; }
+#clockDate { font-size: 12px; color: var(--ink-dim); }
+#clockTime { font-size: 18px; color: var(--ink-bright); font-variant-numeric: tabular-nums; }
+
+.status-card { border-radius: 12px; border: 1px solid; padding: 20px; margin-bottom: 20px; transition: background .5s, border-color .5s; }
+.status-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+.score-label { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-dim); font-weight: 500; }
+#scoreNum { font-size: 36px; font-weight: 600; line-height: 1; }
+.score-denom { color: var(--ink-faint); font-size: 13px; }
+#statusBadge { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+
+.gauge-track { position: relative; height: 12px; border-radius: 999px; overflow: visible; background: #1B1E22; border: 1px solid var(--field-border); }
+.gauge-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width .7s ease-out;
+  background: linear-gradient(90deg, #5C9A69 0%, #D9A441 45%, #D9714B 72%, #C0392B 100%); }
+.gauge-needle { position: absolute; top: -3px; width: 2px; height: 18px; background: var(--ink-bright); transition: left .7s ease-out; }
+.gauge-ticks { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--ink-faint); }
+
+.panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-dim); font-weight: 500; margin-bottom: 12px; }
+.panel-eyebrow { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: rgba(217,164,65,.7); font-weight: 600; margin-bottom: 2px; }
+.panel-head { font-size: 14px; color: var(--ink); font-weight: 600; margin-bottom: 14px; }
+
+.factor-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.factor-rank { font-size: 11px; color: var(--ink-faint); width: 14px; font-family: 'IBM Plex Mono', monospace; }
+.factor-name { font-size: 12.5px; color: #C9C3B6; width: 148px; flex-shrink: 0; }
+.factor-bar { flex: 1; height: 6px; border-radius: 999px; background: #1B1E22; overflow: hidden; }
+.factor-fill { height: 100%; border-radius: 999px; transition: width .4s; }
+.factor-val { font-size: 12px; color: var(--ink-dim); width: 28px; text-align: right; font-family: 'IBM Plex Mono', monospace; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+label.field { display: flex; flex-direction: column; gap: 5px; }
+.field-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); font-weight: 500; }
+.field-box { display: flex; align-items: center; gap: 6px; background: var(--field); border: 1px solid var(--field-border);
+  border-radius: 7px; padding: 9px 11px; }
+.field-box:focus-within { border-color: var(--amber); }
+.field-box input { background: transparent; border: 0; outline: 0; width: 100%; color: var(--ink-bright);
+  font-family: 'IBM Plex Mono', monospace; font-size: 15px; }
+.field-suffix { color: var(--ink-faint); font-size: 11px; font-family: 'IBM Plex Mono', monospace; }
+.field-hint { font-size: 10px; color: var(--ink-faint); line-height: 1.4; }
+
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg button, .toggle-btn { padding: 10px; border-radius: 7px; border: 1px solid var(--field-border); background: var(--field);
+  color: var(--ink-dim); font-size: 12.5px; font-weight: 500; cursor: pointer; text-align: left; }
+.seg button.on { background: #241E12; border-color: #5C4F2C; color: #E0B24C; }
+.toggle-btn.on { background: #2A1414; border-color: #63302B; color: #E5695A; }
+.toggle-btn { width: 100%; }
+
+.feed-item { border-left: 2px solid var(--red); padding: 8px 0 8px 12px; margin-bottom: 10px; }
+.feed-time { font-size: 10.5px; color: var(--ink-faint); font-family: 'IBM Plex Mono', monospace; margin-bottom: 2px; }
+.feed-msg { font-size: 13px; color: #C9C3B6; line-height: 1.45; white-space: pre-wrap; }
+.feed-empty { font-size: 13px; color: var(--ink-faint); padding: 12px 0; }
+.feed-config { display: flex; gap: 8px; margin-bottom: 12px; }
+.feed-config .field-box { flex: 1; }
+.btn { padding: 9px 14px; border-radius: 7px; border: 0; background: var(--amber); color: #191305;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn.secondary { background: transparent; border: 1px solid var(--field-border); color: var(--ink-dim); }
+
+#installBtn { display: none; position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  padding: 12px 22px; border-radius: 999px; box-shadow: 0 4px 20px rgba(0,0,0,.5); z-index: 30; }
+
+footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-top: 24px; line-height: 1.6; }
+@media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } .factor-name { width: 118px; } }
+</style>
+</head>
+<body>
+<div id="alertBanner">⚠ VOLATILITY ALERT — elevated risk of a disorderly session</div>
+
+<div class="wrap">
+<header>
+  <div>
+    <div class="eyebrow">📡 Market Risk Terminal</div>
+    <h1>Volatility Pressure Monitor</h1>
+  </div>
+  <div id="clock"><div id="clockDate"></div><div id="clockTime" class="mono"></div></div>
+</header>
+
+<div class="status-card" id="statusCard">
+  <div class="status-top">
+    <div>
+      <div class="score-label">Composite pressure score</div>
+      <span id="scoreNum" class="mono">0</span> <span class="score-denom mono">/ 100</span>
+    </div>
+    <div id="statusBadge">CALM</div>
+  </div>
+  <div class="gauge-track">
+    <div class="gauge-fill" id="gaugeFill" style="width:0%"></div>
+    <div class="gauge-needle" id="gaugeNeedle" style="left:0%"></div>
+  </div>
+  <div class="gauge-ticks mono"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Agent alert feed (ntfy)</div>
+  <div class="feed-config">
+    <div class="field-box"><input id="ntfyTopic" placeholder="your ntfy topic name"></div>
+    <button class="btn" id="ntfyConnect">Connect</button>
+  </div>
+  <div id="feed"><div class="feed-empty">Enter the same ntfy topic your VM agent pushes to, and recent alerts will appear here.</div></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Top contributors, ranked</div>
+  <div id="factors"></div>
+</div>
+
+<div class="panel">
+  <div class="panel-eyebrow">Options market</div>
+  <div class="panel-head">VIX &amp; tail risk</div>
+  <div class="grid2">
+    <label class="field"><span class="field-label">VIX level</span>
+      <div class="field-box"><input type="number" step="0.1" id="vixLevel" value="16.6"></div></label>
+    <label class="field"><span class="field-label">VIX % change</span>
+      <div class="field-box"><input type="number" step="0.1" id="vixChangePct" value="0.9"><span class="field-suffix">%</span></div></label>
+    <label class="field"><span class="field-label">SKEW index</span>
+      <div class="field-box"><input type="number" step="1" id="skewLevel" value="128"></div>
+      <span class="field-hint">Typical range ~110–150</span></label>
+    <label class="field"><span class="field-label">Crowded-trade stress</span>
+      <button class="toggle-btn" id="crowdedBtn" type="button">None flagged</button></label>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-eyebrow">Macro surprises</div>
+  <div class="panel-head">Jobs &amp; inflation</div>
+  <div class="grid2">
+    <label class="field"><span class="field-label">NFP actual</span>
+      <div class="field-box"><input type="number" step="1" id="nfpActual" value="57"><span class="field-suffix">k</span></div></label>
+    <label class="field"><span class="field-label">NFP consensus</span>
+      <div class="field-box"><input type="number" step="1" id="nfpConsensus" value="115"><span class="field-suffix">k</span></div></label>
+    <label class="field"><span class="field-label">CPI/PCE surprise</span>
+      <div class="field-box"><input type="number" step="0.05" id="inflSurprise" value="0"><span class="field-suffix">pp</span></div>
+      <span class="field-hint">Actual minus consensus, percentage points</span></label>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-eyebrow">Growth data</div>
+  <div class="panel-head">ISM PMI</div>
+  <div class="grid2">
+    <label class="field"><span class="field-label">ISM actual</span>
+      <div class="field-box"><input type="number" step="0.1" id="ismActual" value="53.3"></div></label>
+    <label class="field"><span class="field-label">ISM prior</span>
+      <div class="field-box"><input type="number" step="0.1" id="ismPrior" value="54"></div>
+      <span class="field-hint">50 = expansion / contraction line</span></label>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-eyebrow">Rates</div>
+  <div class="panel-head">Treasury yield moves</div>
+  <div class="grid2">
+    <label class="field"><span class="field-label">10Y move</span>
+      <div class="field-box"><input type="number" step="1" id="yield10bp" value="3"><span class="field-suffix">bp</span></div></label>
+    <label class="field"><span class="field-label">2Y move</span>
+      <div class="field-box"><input type="number" step="1" id="yield2bp" value="2"><span class="field-suffix">bp</span></div></label>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Fed / central bank event today</div>
+  <div class="seg" id="fedSeg">
+    <button data-v="none" class="on">No event</button>
+    <button data-v="neutral">Neutral / as-expected</button>
+    <button data-v="dovish_surprise">Dovish surprise</button>
+    <button data-v="hawkish_surprise">Hawkish surprise</button>
+  </div>
+</div>
+
+<footer>Inputs save automatically on this device.<br>Thresholds: 30 watch · 50 elevated · 70 alert.</footer>
+</div>
+
+<button class="btn" id="installBtn">Install app</button>
+
+<script>
+// ---------- scoring (mirrors agent) ----------
+const clamp=(n,l,h)=>Math.max(l,Math.min(h,n));
+const lerp=(v,x0,y0,x1,y1)=>{if(x1===x0)return y0;const t=clamp((v-x0)/(x1-x0),0,1);return y0+t*(y1-y0);};
+function scoreVix(l,p){let b;if(l<=12)b=5;else if(l<=20)b=lerp(l,12,5,20,30);else if(l<=28)b=lerp(l,20,30,28,65);
+ else if(l<=35)b=lerp(l,28,65,35,88);else b=lerp(l,35,88,55,100);
+ const a=Math.abs(p);let bo=0;if(a>=12)bo=20;else if(a>=6)bo=12;else if(a>=3)bo=5;return clamp(b+bo,0,100);}
+function scoreSurprise(d,[t1,t2,t3]){if(d>=t3)return 90;if(d>=t2)return lerp(d,t2,65,t3,90);
+ if(d>=t1)return lerp(d,t1,35,t2,65);return lerp(d,0,8,t1,35);}
+function scoreIsm(a,p){let b=scoreSurprise(Math.abs(a-p),[0.5,1,2]);if(a<50)b+=12;return clamp(b,0,100);}
+function scoreYield(y10,y2){return clamp(scoreSurprise(Math.max(Math.abs(y10),Math.abs(y2)),[5,10,15]),0,100);}
+function scoreSkew(l){if(l<=115)return lerp(l,100,8,115,20);if(l<=125)return lerp(l,115,20,125,40);
+ if(l<=135)return lerp(l,125,40,135,60);if(l<=145)return lerp(l,135,60,145,80);return clamp(lerp(l,145,80,160,100),0,100);}
+const FED={none:8,neutral:32,dovish_surprise:58,hawkish_surprise:88};
+const W={vix:.20,nfp:.15,inflation:.15,ism:.10,yields:.15,skew:.10,fed:.10,crowded:.05};
+const LABELS={vix:"VIX level & momentum",nfp:"Jobs report surprise",inflation:"CPI / PCE surprise",
+ ism:"ISM PMI deviation",yields:"Treasury yield move",skew:"SKEW tail-risk index",fed:"Fed tone / event",crowded:"Crowded-trade stress"};
+const TONES={calm:{t:"#7FB88A",bg:"#16211A",ring:"#3E5C46"},moderate:{t:"#E0B24C",bg:"#241E12",ring:"#5C4F2C"},
+ high:{t:"#E08A4E",bg:"#271A11",ring:"#5C3F27"},severe:{t:"#E5695A",bg:"#2A1414",ring:"#63302B"}};
+
+// ---------- state ----------
+const NUM_IDS=["vixLevel","vixChangePct","skewLevel","nfpActual","nfpConsensus","inflSurprise","ismActual","ismPrior","yield10bp","yield2bp"];
+let fedTone="none", crowded=false;
+
+function loadState(){
+  try{
+    const s=JSON.parse(localStorage.getItem("vpt-state")||"{}");
+    NUM_IDS.forEach(id=>{if(s[id]!==undefined)document.getElementById(id).value=s[id];});
+    if(s.fedTone){fedTone=s.fedTone;syncFedButtons();}
+    if(s.crowded!==undefined){crowded=s.crowded;syncCrowdedBtn();}
+    if(s.ntfyTopic){document.getElementById("ntfyTopic").value=s.ntfyTopic;}
+  }catch(e){}
+}
+function saveState(){
+  const s={fedTone,crowded,ntfyTopic:document.getElementById("ntfyTopic").value.trim()};
+  NUM_IDS.forEach(id=>s[id]=document.getElementById(id).value);
+  localStorage.setItem("vpt-state",JSON.stringify(s));
+}
+const DEFAULTS={vixLevel:16.6,vixChangePct:0,skewLevel:128,inflSurprise:0,yield10bp:0,yield2bp:0};
+const rawNum=id=>{const v=parseFloat(document.getElementById(id).value);return Number.isNaN(v)?null:v;};
+const num=id=>{const v=rawNum(id);return v===null?(DEFAULTS[id]??0):v;};
+
+// ---------- render ----------
+function compute(){
+  // Pairwise-safe: if either half of a pair is blank, deviation is 0
+  const nfpA=rawNum("nfpActual"),nfpC=rawNum("nfpConsensus");
+  const nfpDev=(nfpA===null||nfpC===null)?0:Math.abs(nfpA-nfpC);
+  const ismA=rawNum("ismActual"),ismP=rawNum("ismPrior");
+  const ismActual=(ismA===null)?(ismP===null?50:ismP):ismA;
+  const ismPrior=(ismP===null)?ismActual:ismP;
+  const sub={
+    vix:scoreVix(num("vixLevel"),num("vixChangePct")),
+    nfp:scoreSurprise(nfpDev,[25,50,100]),
+    inflation:scoreSurprise(Math.abs(num("inflSurprise")),[0.1,0.2,0.3]),
+    ism:scoreIsm(ismActual,ismPrior),
+    yields:scoreYield(num("yield10bp"),num("yield2bp")),
+    skew:scoreSkew(num("skewLevel")),
+    fed:FED[fedTone],
+    crowded:crowded?85:8
+  };
+  const comp=clamp(Object.keys(sub).reduce((a,k)=>a+sub[k]*W[k],0),0,100);
+  return {comp,sub};
+}
+function render(){
+  const {comp,sub}=compute();
+  const tone=comp>=70?"severe":comp>=50?"high":comp>=30?"moderate":"calm";
+  const label=comp>=70?"ALERT":comp>=50?"ELEVATED":comp>=30?"WATCH":"CALM";
+  const c=TONES[tone];
+  document.getElementById("scoreNum").textContent=comp.toFixed(0);
+  document.getElementById("scoreNum").style.color=c.t;
+  const card=document.getElementById("statusCard");
+  card.style.background=c.bg; card.style.borderColor=c.ring;
+  const badge=document.getElementById("statusBadge");
+  badge.textContent=label; badge.style.background=c.ring; badge.style.color=c.t;
+  document.getElementById("gaugeFill").style.width=comp+"%";
+  document.getElementById("gaugeNeedle").style.left=`calc(${comp}% - 1px)`;
+  document.getElementById("alertBanner").style.display=(tone==="severe")?"block":"none";
+  // factors
+  const ranked=Object.keys(sub).map(k=>({k,s:sub[k],c:sub[k]*W[k]})).sort((a,b)=>b.c-a.c);
+  document.getElementById("factors").innerHTML=ranked.map((f,i)=>
+    `<div class="factor-row"><span class="factor-rank">${i+1}</span>
+     <span class="factor-name">${LABELS[f.k]}</span>
+     <div class="factor-bar"><div class="factor-fill" style="width:${f.s}%;background:${c.t};opacity:${0.4+f.s/100*0.6}"></div></div>
+     <span class="factor-val">${f.s.toFixed(0)}</span></div>`).join("");
+  saveState();
+}
+
+NUM_IDS.forEach(id=>document.getElementById(id).addEventListener("input",render));
+function syncFedButtons(){document.querySelectorAll("#fedSeg button").forEach(b=>b.classList.toggle("on",b.dataset.v===fedTone));}
+document.querySelectorAll("#fedSeg button").forEach(b=>b.addEventListener("click",()=>{fedTone=b.dataset.v;syncFedButtons();render();}));
+function syncCrowdedBtn(){
+  const b=document.getElementById("crowdedBtn");
+  b.classList.toggle("on",crowded);
+  b.textContent=crowded?"Flagged — unwind risk":"None flagged";
+}
+document.getElementById("crowdedBtn").addEventListener("click",()=>{crowded=!crowded;syncCrowdedBtn();render();});
+
+// ---------- clock ----------
+function tick(){
+  const n=new Date();
+  document.getElementById("clockDate").textContent=n.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+  document.getElementById("clockTime").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+}
+setInterval(tick,1000);tick();
+
+// ---------- ntfy feed ----------
+let feedTimer=null;
+async function pollNtfy(){
+  const topic=document.getElementById("ntfyTopic").value.trim();
+  if(!topic)return;
+  try{
+    const r=await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=48h`);
+    const text=await r.text();
+    const msgs=text.trim().split("\n").filter(Boolean).map(l=>{try{return JSON.parse(l);}catch(e){return null;}})
+      .filter(m=>m&&m.event==="message").sort((a,b)=>b.time-a.time).slice(0,10);
+    const feed=document.getElementById("feed");
+    if(!msgs.length){feed.innerHTML='<div class="feed-empty">Connected — no alerts in the last 48 hours. Quiet tape.</div>';return;}
+    feed.innerHTML=msgs.map(m=>
+      `<div class="feed-item"><div class="feed-time">${new Date(m.time*1000).toLocaleString()}</div>
+       <div class="feed-msg">${(m.message||"").replace(/</g,"&lt;")}</div></div>`).join("");
+  }catch(e){
+    document.getElementById("feed").innerHTML='<div class="feed-empty">Couldn\u2019t reach ntfy.sh — check the topic name and your connection.</div>';
+  }
+}
+document.getElementById("ntfyConnect").addEventListener("click",()=>{
+  saveState();pollNtfy();
+  if(feedTimer)clearInterval(feedTimer);
+  feedTimer=setInterval(pollNtfy,60000);
+});
+
+// ---------- PWA install ----------
+let deferredPrompt=null;
+window.addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault();deferredPrompt=e;
+  document.getElementById("installBtn").style.display="block";
+});
+document.getElementById("installBtn").addEventListener("click",async()=>{
+  if(!deferredPrompt)return;
+  deferredPrompt.prompt();await deferredPrompt.userChoice;
+  deferredPrompt=null;document.getElementById("installBtn").style.display="none";
+});
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js");}
+
+loadState();syncFedButtons();syncCrowdedBtn();render();
+// auto-reconnect feed if a topic was saved
+if(document.getElementById("ntfyTopic").value.trim()){pollNtfy();feedTimer=setInterval(pollNtfy,60000);}
+</script>
+</body>
+</html>
