@@ -32,9 +32,14 @@ body { background: var(--bg); color: var(--ink); min-height: 100vh; padding-bott
 header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 12px; }
 .eyebrow { color: var(--amber); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
 h1 { color: var(--ink-bright); font-size: 22px; letter-spacing: -0.01em; line-height: 1.1; }
-#clock { text-align: right; }
-#clockDate { font-size: 12px; color: var(--ink-dim); }
-#clockTime { font-size: 18px; color: var(--ink-bright); font-variant-numeric: tabular-nums; }
+#liveStatus { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 6px 10px;
+  border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); flex-shrink: 0; }
+#led { width: 9px; height: 9px; border-radius: 50%; background: #4A4640; flex-shrink: 0; }
+#led.green { background: #5C9A69; box-shadow: 0 0 6px rgba(92,154,105,.8); animation: ledPulse 2.4s ease-in-out infinite; }
+#led.amber { background: #D9A441; box-shadow: 0 0 6px rgba(217,164,65,.6); }
+@keyframes ledPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { #led.green { animation: none; } }
+#ledText { font-size: 11px; color: var(--ink-dim); white-space: nowrap; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
 
 .status-card { border-radius: 12px; border: 1px solid; padding: 20px; margin-bottom: 20px; transition: background .5s, border-color .5s; }
 .status-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
@@ -80,6 +85,13 @@ label.field { display: flex; flex-direction: column; gap: 5px; }
 .toggle-btn { width: 100%; }
 
 .feed-item { border-left: 2px solid var(--red); padding: 8px 0 8px 12px; margin-bottom: 10px; }
+details.settings { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; margin-bottom: 16px; }
+details.settings summary { padding: 14px 16px; cursor: pointer; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .14em; color: var(--ink-faint); font-weight: 500; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.settings summary::-webkit-details-marker { display: none; }
+details.settings summary::after { content: "+"; color: var(--ink-faint); font-size: 15px; }
+details.settings[open] summary::after { content: "\2212"; }
+details.settings .settings-body { padding: 0 16px 16px; }
 .feed-time { font-size: 10.5px; color: var(--ink-faint); font-family: 'IBM Plex Mono', monospace; margin-bottom: 2px; }
 .feed-msg { font-size: 13px; color: #C9C3B6; line-height: 1.45; white-space: pre-wrap; }
 .feed-empty { font-size: 13px; color: var(--ink-faint); padding: 12px 0; }
@@ -105,7 +117,9 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
     <div class="eyebrow">📡 Market Risk Terminal</div>
     <h1>Volatility Pressure Monitor</h1>
   </div>
-  <div id="clock"><div id="clockDate"></div><div id="clockTime" class="mono"></div></div>
+  <div id="liveStatus" title="Connection settings">
+    <div id="led"></div><span id="ledText">not connected</span>
+  </div>
 </header>
 
 <div class="status-card" id="statusCard">
@@ -121,24 +135,6 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
     <div class="gauge-needle" id="gaugeNeedle" style="left:0%"></div>
   </div>
   <div class="gauge-ticks mono"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-</div>
-
-<div class="panel">
-  <div class="panel-title">Agent alert feed (ntfy)</div>
-  <div class="feed-config">
-    <div class="field-box"><input id="ntfyTopic" placeholder="your ntfy topic name"></div>
-    <button class="btn" id="ntfyConnect">Connect</button>
-  </div>
-  <div id="feed"><div class="feed-empty">Enter the same ntfy topic your VM agent pushes to, and recent alerts will appear here.</div></div>
-</div>
-
-<div class="panel">
-  <div class="panel-title">Agent sync</div>
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-    <button class="btn" id="syncNow">Sync from agent</button>
-    <button class="btn secondary" id="autoSyncBtn">Auto-sync: off</button>
-  </div>
-  <div id="syncInfo" class="feed-empty" style="padding:4px 0;">Uses the same ntfy topic above (reads &lt;topic&gt;-state). Sync pulls the agent's latest live readings into the fields below.</div>
 </div>
 
 <div class="panel">
@@ -208,6 +204,23 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
     <button data-v="hawkish_surprise">Hawkish surprise</button>
   </div>
 </div>
+
+<details class="settings" id="settingsPanel">
+  <summary>Connection · ntfy &amp; agent sync</summary>
+  <div class="settings-body">
+    <div class="feed-config">
+      <div class="field-box"><input id="ntfyTopic" placeholder="your ntfy topic name"></div>
+      <button class="btn" id="ntfyConnect">Connect</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <button class="btn" id="syncNow">Sync from agent</button>
+      <button class="btn secondary" id="autoSyncBtn">Auto-sync: off</button>
+    </div>
+    <div id="syncInfo" class="feed-empty" style="padding:2px 0 10px;">Sync reads the agent's latest live readings from &lt;topic&gt;-state and fills the fields above.</div>
+    <div class="panel-title">Recent agent alerts</div>
+    <div id="feed"><div class="feed-empty">Connect your ntfy topic to see recent alerts here.</div></div>
+  </div>
+</details>
 
 <footer>Inputs save automatically on this device.<br>Thresholds: 30 watch · 50 elevated · 70 alert.</footer>
 </div>
@@ -311,13 +324,22 @@ function syncCrowdedBtn(){
 }
 document.getElementById("crowdedBtn").addEventListener("click",()=>{crowded=!crowded;syncCrowdedBtn();render();});
 
-// ---------- clock ----------
-function tick(){
-  const n=new Date();
-  document.getElementById("clockDate").textContent=n.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
-  document.getElementById("clockTime").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+// ---------- live LED indicator ----------
+let lastSyncTs=null; // epoch seconds of last successful agent state sync
+function updateLed(){
+  const led=document.getElementById("led"), txt=document.getElementById("ledText");
+  const topic=document.getElementById("ntfyTopic").value.trim();
+  if(!topic){led.className="";txt.textContent="not connected";return;}
+  if(lastSyncTs===null){led.className="amber";txt.textContent="no sync yet";return;}
+  const ageMin=Math.round((Date.now()/1000-lastSyncTs)/60);
+  if(ageMin<=20){led.className="green";txt.textContent=ageMin<=0?"live · just now":`live · ${ageMin}m ago`;}
+  else{led.className="amber";txt.textContent=`stale · ${ageMin}m ago`;}
 }
-setInterval(tick,1000);tick();
+setInterval(updateLed,15000);
+document.getElementById("liveStatus").addEventListener("click",()=>{
+  const p=document.getElementById("settingsPanel");
+  p.open=true;p.scrollIntoView({behavior:"smooth",block:"start"});
+});
 
 // ---------- ntfy feed ----------
 let feedTimer=null;
@@ -366,10 +388,12 @@ async function syncFromAgent(){
     if(inp.fedTone&&FED[inp.fedTone]!==undefined){fedTone=inp.fedTone;syncFedButtons();}
     if(typeof inp.crowded==="boolean"){crowded=inp.crowded;syncCrowdedBtn();}
     render();
+    lastSyncTs=st.ts||Math.floor(Date.now()/1000);
+    updateLed();
     const age=Math.round((Date.now()/1000-st.ts)/60);
     info.textContent=`Synced — agent read ${age} min ago. Agent composite: ${st.composite} (${st.status}).`
       +(st.narrative?` ${st.narrative}`:"");
-  }catch(e){info.textContent="Couldn't reach ntfy.sh — check connection/topic.";}
+  }catch(e){info.textContent="Couldn't reach ntfy.sh — check connection/topic.";updateLed();}
 }
 document.getElementById("syncNow").addEventListener("click",syncFromAgent);
 document.getElementById("autoSyncBtn").addEventListener("click",()=>{
@@ -392,9 +416,13 @@ document.getElementById("installBtn").addEventListener("click",async()=>{
 });
 if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js");}
 
-loadState();syncFedButtons();syncCrowdedBtn();render();
-// auto-reconnect feed if a topic was saved
-if(document.getElementById("ntfyTopic").value.trim()){pollNtfy();feedTimer=setInterval(pollNtfy,60000);}
+loadState();syncFedButtons();syncCrowdedBtn();render();updateLed();
+// auto-reconnect + auto-sync if a topic was saved
+if(document.getElementById("ntfyTopic").value.trim()){
+  pollNtfy();feedTimer=setInterval(pollNtfy,60000);
+  autoSync=true;document.getElementById("autoSyncBtn").textContent="Auto-sync: on";
+  syncFromAgent();autoSyncTimer=setInterval(syncFromAgent,60000);
+}
 </script>
 </body>
 </html>
