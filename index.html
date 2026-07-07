@@ -84,7 +84,17 @@ label.field { display: flex; flex-direction: column; gap: 5px; }
 .toggle-btn.on { background: #2A1414; border-color: #63302B; color: #E5695A; }
 .toggle-btn { width: 100%; }
 
-.feed-item { border-left: 2px solid var(--red); padding: 8px 0 8px 12px; margin-bottom: 10px; }
+.feed-item { background: var(--field); border: 1px solid var(--field-border); border-left: 3px solid var(--red);
+  border-radius: 8px; padding: 11px 13px; margin-bottom: 10px; }
+.feed-item.status-msg { border-left-color: var(--green); }
+.feed-item .feed-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.feed-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--red); text-transform: uppercase; }
+.feed-item.status-msg .feed-title { color: var(--green); }
+.feed-time { font-size: 11px; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+.feed-msg { font-size: 14px; color: var(--ink); line-height: 1.5; white-space: pre-wrap; }
+.feed-empty { font-size: 13px; color: var(--ink-dim); padding: 10px 0; }
+#alertsPanel { margin-bottom: 20px; }
+#alertsPanel .panel-title { color: var(--ink-dim); }
 details.settings { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; margin-bottom: 16px; }
 details.settings summary { padding: 14px 16px; cursor: pointer; font-size: 11px; text-transform: uppercase;
   letter-spacing: .14em; color: var(--ink-faint); font-weight: 500; list-style: none; display: flex; justify-content: space-between; align-items: center; }
@@ -92,9 +102,6 @@ details.settings summary::-webkit-details-marker { display: none; }
 details.settings summary::after { content: "+"; color: var(--ink-faint); font-size: 15px; }
 details.settings[open] summary::after { content: "\2212"; }
 details.settings .settings-body { padding: 0 16px 16px; }
-.feed-time { font-size: 10.5px; color: var(--ink-faint); font-family: 'IBM Plex Mono', monospace; margin-bottom: 2px; }
-.feed-msg { font-size: 13px; color: #C9C3B6; line-height: 1.45; white-space: pre-wrap; }
-.feed-empty { font-size: 13px; color: var(--ink-faint); padding: 12px 0; }
 .feed-config { display: flex; gap: 8px; margin-bottom: 12px; }
 .feed-config .field-box { flex: 1; }
 .btn { padding: 9px 14px; border-radius: 7px; border: 0; background: var(--amber); color: #191305;
@@ -135,6 +142,11 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
     <div class="gauge-needle" id="gaugeNeedle" style="left:0%"></div>
   </div>
   <div class="gauge-ticks mono"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+</div>
+
+<div class="panel" id="alertsPanel">
+  <div class="panel-title">Agent alerts</div>
+  <div id="feed"><div class="feed-empty">No agent connected — open Connection settings below to link your ntfy topic.</div></div>
 </div>
 
 <div class="panel">
@@ -216,9 +228,7 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
       <button class="btn" id="syncNow">Sync from agent</button>
       <button class="btn secondary" id="autoSyncBtn">Auto-sync: off</button>
     </div>
-    <div id="syncInfo" class="feed-empty" style="padding:2px 0 10px;">Sync reads the agent's latest live readings from &lt;topic&gt;-state and fills the fields above.</div>
-    <div class="panel-title">Recent agent alerts</div>
-    <div id="feed"><div class="feed-empty">Connect your ntfy topic to see recent alerts here.</div></div>
+    <div id="syncInfo" class="feed-empty" style="padding:2px 0 4px;">Sync reads the agent's latest live readings from &lt;topic&gt;-state and fills the fields above. Alerts appear in the panel near the top.</div>
   </div>
 </details>
 
@@ -341,6 +351,23 @@ document.getElementById("liveStatus").addEventListener("click",()=>{
   p.open=true;p.scrollIntoView({behavior:"smooth",block:"start"});
 });
 
+// ---------- browser notifications ----------
+function notifSupported(){return "Notification" in window;}
+async function ensureNotifPermission(){
+  if(!notifSupported())return false;
+  if(Notification.permission==="granted")return true;
+  if(Notification.permission==="denied")return false;
+  return (await Notification.requestPermission())==="granted";
+}
+async function showBrowserNotification(title,body){
+  if(!notifSupported()||Notification.permission!=="granted")return;
+  try{
+    const reg=await navigator.serviceWorker.getRegistration();
+    if(reg){reg.showNotification(title,{body,icon:"icon-192.png",badge:"icon-192.png",tag:"vpt-alert"});}
+    else{new Notification(title,{body,icon:"icon-192.png"});}
+  }catch(e){}
+}
+
 // ---------- ntfy feed ----------
 let feedTimer=null;
 async function pollNtfy(){
@@ -351,17 +378,34 @@ async function pollNtfy(){
     const text=await r.text();
     const msgs=text.trim().split("\n").filter(Boolean).map(l=>{try{return JSON.parse(l);}catch(e){return null;}})
       .filter(m=>m&&m.event==="message").sort((a,b)=>b.time-a.time).slice(0,10);
+    // fire a browser notification for any alert newer than the last one seen
+    const lastSeen=parseInt(localStorage.getItem("vpt-last-alert-ts")||"0",10);
+    const fresh=msgs.filter(m=>m.time>lastSeen);
+    if(fresh.length&&lastSeen>0){ // skip the very first poll so history doesn't spam
+      const newest=fresh[0];
+      showBrowserNotification(newest.title||"Volatility Alert",newest.message||"");
+    }
+    if(msgs.length)localStorage.setItem("vpt-last-alert-ts",String(msgs[0].time));
     const feed=document.getElementById("feed");
     if(!msgs.length){feed.innerHTML='<div class="feed-empty">Connected — no alerts in the last 48 hours. Quiet tape.</div>';return;}
-    feed.innerHTML=msgs.map(m=>
-      `<div class="feed-item"><div class="feed-time">${new Date(m.time*1000).toLocaleString()}</div>
-       <div class="feed-msg">${(m.message||"").replace(/</g,"&lt;")}</div></div>`).join("");
+    feed.innerHTML=msgs.map(m=>{
+      const isStatus=(m.title||"").toLowerCase().includes("status")||(m.priority||3)<=2;
+      const title=(m.title||"Volatility Alert").replace(/</g,"&lt;");
+      const when=new Date(m.time*1000).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+      return `<div class="feed-item${isStatus?" status-msg":""}">
+        <div class="feed-head"><span class="feed-title">${title}</span><span class="feed-time">${when}</span></div>
+        <div class="feed-msg">${(m.message||"").replace(/</g,"&lt;")}</div></div>`;
+    }).join("");
   }catch(e){
     document.getElementById("feed").innerHTML='<div class="feed-empty">Couldn\u2019t reach ntfy.sh — check the topic name and your connection.</div>';
   }
 }
-document.getElementById("ntfyConnect").addEventListener("click",()=>{
-  saveState();pollNtfy();
+document.getElementById("ntfyConnect").addEventListener("click",async()=>{
+  saveState();
+  const granted=await ensureNotifPermission();
+  const info=document.getElementById("syncInfo");
+  if(notifSupported()&&!granted){info.textContent="Heads up: notifications are blocked for this site — alerts will show in the feed below but won't pop up. Enable them in your browser's site settings.";}
+  pollNtfy();
   if(feedTimer)clearInterval(feedTimer);
   feedTimer=setInterval(pollNtfy,60000);
 });

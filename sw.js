@@ -1,4 +1,4 @@
-const CACHE = "vpt-v3";
+const CACHE = "vpt-v5";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
