@@ -144,6 +144,11 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
   <div class="gauge-ticks mono"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
 </div>
 
+<div class="panel" id="syncPanel" style="display:none;">
+  <div class="panel-title">Latest agent read</div>
+  <div id="syncInfo" class="feed-msg"></div>
+</div>
+
 <div class="panel" id="alertsPanel">
   <div class="panel-title">Agent alerts</div>
   <div id="feed"><div class="feed-empty">No agent connected — open Connection settings below to link your ntfy topic.</div></div>
@@ -228,7 +233,7 @@ footer { text-align: center; font-size: 11px; color: var(--ink-faint); margin-to
       <button class="btn" id="syncNow">Sync from agent</button>
       <button class="btn secondary" id="autoSyncBtn">Auto-sync: off</button>
     </div>
-    <div id="syncInfo" class="feed-empty" style="padding:2px 0 4px;">Sync reads the agent's latest live readings from &lt;topic&gt;-state and fills the fields above. Alerts appear in the panel near the top.</div>
+    <div id="syncNote" class="feed-empty" style="padding:2px 0 4px;">Sync reads the agent's latest live readings from &lt;topic&gt;-state. Results show in "Latest agent read" near the top.</div>
   </div>
 </details>
 
@@ -403,8 +408,8 @@ async function pollNtfy(){
 document.getElementById("ntfyConnect").addEventListener("click",async()=>{
   saveState();
   const granted=await ensureNotifPermission();
-  const info=document.getElementById("syncInfo");
-  if(notifSupported()&&!granted){info.textContent="Heads up: notifications are blocked for this site — alerts will show in the feed below but won't pop up. Enable them in your browser's site settings.";}
+  const note=document.getElementById("syncNote");
+  if(notifSupported()&&!granted){note.textContent="Heads up: notifications are blocked for this site — alerts will show in the feed but won't pop up. Enable them in your browser's site settings.";}
   pollNtfy();
   if(feedTimer)clearInterval(feedTimer);
   feedTimer=setInterval(pollNtfy,60000);
@@ -415,14 +420,16 @@ let autoSync=false, autoSyncTimer=null;
 async function syncFromAgent(){
   const topic=document.getElementById("ntfyTopic").value.trim();
   const info=document.getElementById("syncInfo");
-  if(!topic){info.textContent="Enter your ntfy topic above first.";return;}
+  const note=document.getElementById("syncNote");
+  const panel=document.getElementById("syncPanel");
+  if(!topic){note.textContent="Enter your ntfy topic above first.";return;}
   try{
     const r=await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}-state/json?poll=1&since=24h`);
     const lines=(await r.text()).trim().split("\n").filter(Boolean);
     const msgs=lines.map(l=>{try{return JSON.parse(l);}catch(e){return null;}})
       .filter(m=>m&&m.event==="message").sort((a,b)=>b.time-a.time);
-    if(!msgs.length){info.textContent="No agent state found in the last 24h — is the agent running with the updated script?";return;}
-    let st;try{st=JSON.parse(msgs[0].message);}catch(e){info.textContent="Latest state message wasn't valid JSON.";return;}
+    if(!msgs.length){note.textContent="No agent state found in the last 24h — is the agent running with the updated script?";return;}
+    let st;try{st=JSON.parse(msgs[0].message);}catch(e){note.textContent="Latest state message wasn't valid JSON.";return;}
     const inp=st.inputs||{};
     const setIf=(id,v)=>{if(v!==null&&v!==undefined)document.getElementById(id).value=v;};
     setIf("vixLevel",inp.vixLevel);setIf("vixChangePct",inp.vixChangePct);
@@ -435,9 +442,11 @@ async function syncFromAgent(){
     lastSyncTs=st.ts||Math.floor(Date.now()/1000);
     updateLed();
     const age=Math.round((Date.now()/1000-st.ts)/60);
-    info.textContent=`Synced — agent read ${age} min ago. Agent composite: ${st.composite} (${st.status}).`
-      +(st.narrative?` ${st.narrative}`:"");
-  }catch(e){info.textContent="Couldn't reach ntfy.sh — check connection/topic.";updateLed();}
+    panel.style.display="block";
+    info.textContent=`Agent composite ${st.composite} (${st.status}) · read ${age<=0?"just now":age+" min ago"}.`
+      +(st.narrative?`\n${st.narrative}`:"");
+    note.textContent="Synced OK.";
+  }catch(e){note.textContent="Couldn't reach ntfy.sh — check connection/topic.";updateLed();}
 }
 document.getElementById("syncNow").addEventListener("click",syncFromAgent);
 document.getElementById("autoSyncBtn").addEventListener("click",()=>{
