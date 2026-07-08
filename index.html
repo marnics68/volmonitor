@@ -345,9 +345,10 @@ function updateLed(){
   const led=document.getElementById("led"), txt=document.getElementById("ledText");
   const topic=document.getElementById("ntfyTopic").value.trim();
   if(!topic){led.className="";txt.textContent="not connected";return;}
-  if(lastSyncTs===null){led.className="amber";txt.textContent="no sync yet";return;}
+  if(lastSyncTs===null){led.className="amber";txt.textContent=marketOpenNow()?"no sync yet":"market closed";return;}
   const ageMin=Math.round((Date.now()/1000-lastSyncTs)/60);
   if(ageMin<=20){led.className="green";txt.textContent=ageMin<=0?"live · just now":`live · ${ageMin}m ago`;}
+  else if(!marketOpenNow()){led.className="amber";txt.textContent="market closed";}
   else{led.className="amber";txt.textContent=`stale · ${ageMin}m ago`;}
 }
 setInterval(updateLed,15000);
@@ -373,6 +374,23 @@ async function showBrowserNotification(title,body){
   }catch(e){}
 }
 
+// ---------- market hours helper ----------
+function etNow(){
+  const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour12:false,
+    weekday:"short",hour:"2-digit",minute:"2-digit"}).formatToParts(new Date());
+  const get=t=>p.find(x=>x.type===t).value;
+  return {day:get("weekday"),mins:parseInt(get("hour"),10)*60+parseInt(get("minute"),10)};
+}
+function marketOpenNow(){
+  const {day,mins}=etNow();
+  if(day==="Sat"||day==="Sun")return false;
+  return mins>=9*60+30&&mins<=16*60;
+}
+function marketClosedMsg(){
+  if(marketOpenNow())return null;
+  return "Market closed — the agent only runs 9:30\u20134:00 ET weekdays, and ntfy's cache expires after ~12h, so overnight/weekend syncs come up empty. It'll repopulate shortly after the next open.";
+}
+
 // ---------- ntfy feed ----------
 let feedTimer=null;
 async function pollNtfy(){
@@ -392,7 +410,7 @@ async function pollNtfy(){
     }
     if(msgs.length)localStorage.setItem("vpt-last-alert-ts",String(msgs[0].time));
     const feed=document.getElementById("feed");
-    if(!msgs.length){feed.innerHTML='<div class="feed-empty">Connected — no alerts in the last 48 hours. Quiet tape.</div>';return;}
+    if(!msgs.length){feed.innerHTML=`<div class="feed-empty">${marketClosedMsg()||"Connected — no alerts in the last 48 hours. Quiet tape."}</div>`;return;}
     feed.innerHTML=msgs.map(m=>{
       const isStatus=(m.title||"").toLowerCase().includes("status")||(m.priority||3)<=2;
       const title=(m.title||"Volatility Alert").replace(/</g,"&lt;");
@@ -428,7 +446,7 @@ async function syncFromAgent(){
     const lines=(await r.text()).trim().split("\n").filter(Boolean);
     const msgs=lines.map(l=>{try{return JSON.parse(l);}catch(e){return null;}})
       .filter(m=>m&&m.event==="message").sort((a,b)=>b.time-a.time);
-    if(!msgs.length){note.textContent="No agent state found in the last 24h — is the agent running with the updated script?";return;}
+    if(!msgs.length){note.textContent=marketClosedMsg()||"No agent state found in the last 24h — is the agent running with the updated script?";return;}
     let st;try{st=JSON.parse(msgs[0].message);}catch(e){note.textContent="Latest state message wasn't valid JSON.";return;}
     const inp=st.inputs||{};
     const setIf=(id,v)=>{if(v!==null&&v!==undefined)document.getElementById(id).value=v;};
